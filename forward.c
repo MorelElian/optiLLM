@@ -41,6 +41,12 @@ inline int MINDEX4(int N1, int N2, int N3, int N4, int i1, int i2, int i3, int i
   return i1 * N2 * N3 * N4 + i2 * N3 * N4 + i3 * N4 + i4;
 }
 
+
+#define CALLOC0(T) (T*) calloc(MSIZE0(), sizeof(T))
+#define CALLOC1(T, N1) (T*) calloc(MSIZE1(N1), sizeof(T))
+#define CALLOC2(T, N1, N2) (T*) calloc(MSIZE2(N1, N2), sizeof(T))
+#define CALLOC3(T, N1, N2, N3) (T*) calloc(MSIZE3(N1, N2, N3), sizeof(T))
+#define CALLOC4(T, N1, N2, N3, N4) (T*) calloc(MSIZE4(N1, N2, N3, N4), sizeof(T))
 // ----------------------------------------------------------------------------
 // transformer_t model
 
@@ -366,66 +372,70 @@ float *forward(
 
     float epsilon,
 
-    float embedding_weight[restrict vocabulary_len][embedding_dim],
-    float mha_norm_weight[restrict layer_count][embedding_dim],
-    float mha_q_weight[restrict layer_count][kv_head_count]
-                      [q_head_per_kv_head_count][head_dim][embedding_dim],
-    float mha_k_weight[restrict layer_count][kv_head_count][head_dim]
-                      [embedding_dim],
-    float mha_v_weight[restrict layer_count][kv_head_count][head_dim]
-                      [embedding_dim],
-    float mha_out_weight[restrict layer_count][embedding_dim][embedding_dim],
-    float ffn_norm_weight[restrict layer_count][embedding_dim],
-    float ffn_fc_weight[restrict layer_count][embedding_dim][hidden_dim],
-    float ffn_up_weight[restrict layer_count][embedding_dim][hidden_dim],
-    float ffn_out_weight[restrict layer_count][hidden_dim][embedding_dim],
-    float out_norm_weight[restrict embedding_dim],
-    float out_weight[restrict vocabulary_len][embedding_dim],
+    float* embedding_weight,
+    float* mha_norm_weight,
+    float* mha_q_weight,
+    float* mha_k_weight,
+    float* mha_v_weight,
+    float* mha_out_weight,
+    float* ffn_norm_weight,
+    float* ffn_fc_weight,
+    float* ffn_up_weight,
+    float* ffn_out_weight,
+    float* out_norm_weight,
+    float* out_weight,
 
-    float embedding[embedding_dim], float mha_norm[embedding_dim],
-    float mha_q[q_head_count][head_dim],
-    float k_cache[restrict layer_count][kv_head_count][context_len][head_dim],
-    float v_cache[restrict layer_count][kv_head_count][context_len][head_dim],
-    float mha_score[q_head_count][context_len],
-    float mha_blend[q_head_count][head_dim], float mha_att[embedding_dim],
-    float mha_out[embedding_dim], float ffn_norm[embedding_dim],
-    float ffn_fc[hidden_dim], float ffn_up[hidden_dim],
-    float ffn_out[embedding_dim], float logits[vocabulary_len], int pos,
+    float* k_cache,
+    float* v_cache,
+    float* logits, int pos,
     int logits_count) {
+
+  float* embedding = CALLOC1(float,embedding_dim);
+  float* mha_norm = CALLOC1(float,embedding_dim);
+  float* mha_q = CALLOC2(float,q_head_count,head_dim);
+  float* mha_score = CALLOC2(float,q_head_count, context_len);
+  float* mha_blend = CALLOC2(float,q_head_count,head_dim);
+  float* mha_att = CALLOC1(float,embedding_dim);
+  float* mha_out = CALLOC1(float,embedding_dim);
+  float* ffn_norm = CALLOC1(float,embedding_dim);
+  float* ffn_fc = CALLOC1(float,hidden_dim);
+  float* ffn_up = CALLOC1(float,hidden_dim);
+  float* ffn_out = CALLOC1(float,embedding_dim);
+
   // Get embedding representation of each token in the token sequence
   for (int e = 0; e < embedding_dim; e++) {
-    embedding[e] = embedding_weight[pos][e];
+    embedding[MINDEX1(embedding_dim,e)] = embedding_weight[MINDEX2(vocabulary_len,embedding_dim,token,e)];
   }
 
   // forward all the layers
   for (int l = 0; l < layer_count; l++) {
 
     // attention rmsnorm
-    rmsnorm(embedding_dim, mha_norm, embedding, mha_norm_weight[MINDEX1(layer_count,l)], epsilon);
+    rmsnorm(embedding_dim, mha_norm, embedding, &mha_norm_weight[MINDEX1(layer_count,l)], epsilon);
 
     // qkv matmuls for this position
     for (int q = 0; q < q_head_count; q++) {
-      matmul(head_dim, embedding_dim, mha_q[q], mha_norm, mha_q_weight[MINDEX2(layer_count,q_head_count,l,q)]);
+      matmul(head_dim, embedding_dim, &mha_q[q], mha_norm, &mha_q_weight[MINDEX2(layer_count,q_head_count,l,q)]);
     }
 
     for (int h = 0; h < kv_head_count; h++) {
-      matmul(head_dim, embedding_dim, k_cache[MINDEX2(layer_count,kv_head_count,l,h)] + pos, mha_norm,
-             mha_k_weight[MINDEX2(layer_count,kv_head_count,l,h)]);
+      matmul(head_dim, embedding_dim, &k_cache[MINDEX2(layer_count,kv_head_count,l,h)] + pos, mha_norm,
+             &mha_k_weight[MINDEX2(layer_count,kv_head_count,l,h)]);
     }
 
     for (int h = 0; h < kv_head_count; h++) {
-      matmul(head_dim, embedding_dim, v_cache[MINDEX2(layer_count,kv_head_count,l,h)] + pos, mha_norm,
-             mha_v_weight[MINDEX2(layer_count,kv_head_count,l,h)]);
+      matmul(head_dim, embedding_dim, &v_cache[MINDEX2(layer_count,kv_head_count,l,h)] + pos, mha_norm,
+             &mha_v_weight[MINDEX2(layer_count,kv_head_count,l,h)]);
     }
 
     // RoPE q: complex-valued rotate q in each head
     for (int q = 0; q < q_head_count; q++) {
-      rope(head_dim, mha_q[MINDEX1(q_head_count,q)], pos);
+      rope(head_dim, &mha_q[MINDEX1(q_head_count,q)], pos);
     }
 
     // RoPE k: complex-valued rotate k in each head
     for (int h = 0; h < kv_head_count; h++) {
-      rope(head_dim, k_cache[MINDEX2(layer_count,kv_head_count,l,h)] + pos, pos);
+      rope(head_dim, &k_cache[MINDEX2(layer_count,kv_head_count,l,h)] + pos, pos);
     }
 
     // multihead attention. iterate over all heads
@@ -442,7 +452,7 @@ float *forward(
       }
 
       // softmax the scores to get attention weights
-      softmax(pos + 1, context_len, mha_score[MINDEX1(q_head_count,q)]);
+      softmax(pos + 1, context_len, &mha_score[MINDEX1(q_head_count,q)]);
 
       // weighted sum of the values
       for (int e = 0; e < head_dim; e++) {
@@ -463,7 +473,7 @@ float *forward(
     }
 
     // final matmul to get the output of the attention
-    matmul(embedding_dim, embedding_dim, mha_out, mha_att, mha_out_weight[MINDEX1(layer_count,l)]);
+    matmul(embedding_dim, embedding_dim, mha_out, mha_att, &mha_out_weight[MINDEX1(layer_count,l)]);
 
     // residual connection back into x
 
@@ -472,22 +482,20 @@ float *forward(
     }
 
     // ffn rmsnorm
-    rmsnorm(embedding_dim, ffn_norm, embedding, ffn_norm_weight[MINDEX1(layer_count,l)], epsilon);
-    matmul(hidden_dim, embedding_dim, ffn_fc, ffn_norm, ffn_fc_weight[MINDEX1(layer_count,l)]);
-    matmul(hidden_dim, embedding_dim, ffn_up, ffn_norm, ffn_up_weight[MINDEX1(layer_count,l)]);
+    rmsnorm(embedding_dim, ffn_norm, embedding, &ffn_norm_weight[MINDEX1(layer_count,l)], epsilon);
+    matmul(hidden_dim, embedding_dim, ffn_fc, ffn_norm, &ffn_fc_weight[MINDEX1(layer_count,l)]);
+    matmul(hidden_dim, embedding_dim, ffn_up, ffn_norm, &ffn_up_weight[MINDEX1(layer_count,l)]);
 
     // SwiGLU non-linearity
-
     for (int e = 0; e < hidden_dim; e++) {
       ffn_fc[MINDEX1(hidden_dim,e)] *= (1.0f / (1.0f + expf(-ffn_fc[MINDEX1(hidden_dim,e)])));
       ffn_fc[MINDEX1(hidden_dim,e)] *= ffn_up[MINDEX1(hidden_dim,e)];
     }
 
     // final matmul to get the output of the ffn
-    matmul(embedding_dim, hidden_dim, ffn_out, ffn_fc, ffn_out_weight[MINDEX1(layer_count,l)]);
+    matmul(embedding_dim, hidden_dim, ffn_out, ffn_fc, &ffn_out_weight[MINDEX1(layer_count,l)]);
 
     // residual connection
-
     for (int e = 0; e < embedding_dim; e++) {
       embedding[MINDEX1(embedding_dim,e)] += ffn_out[MINDEX1(embedding_dim,e)];
     }
