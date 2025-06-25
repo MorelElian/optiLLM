@@ -40,6 +40,25 @@ inline int MINDEX3(int N1, int N2, int N3, int i1, int i2, int i3) {
 inline int MINDEX4(int N1, int N2, int N3, int N4, int i1, int i2, int i3, int i4) {
   return i1 * N2 * N3 * N4 + i2 * N3 * N4 + i3 * N4 + i4;
 }
+inline size_t MSIZE0() {
+  return 1;
+}
+
+inline size_t MSIZE1(int N1) {
+  return (size_t)N1;
+}
+
+inline size_t MSIZE2(int N1, int N2) {
+  return (size_t)N1 * (size_t)N2;
+}
+
+inline size_t MSIZE3(int N1, int N2, int N3) {
+  return (size_t)N1 * (size_t)N2 * (size_t)N3;
+}
+
+inline size_t MSIZE4(int N1, int N2, int N3, int N4) {
+  return (size_t)N1 * (size_t)N2 * (size_t)N3 * (size_t)N4;
+}
 
 
 #define CALLOC0(T) (T*) calloc(MSIZE0(), sizeof(T))
@@ -298,65 +317,65 @@ void print_vector(size_t size, float *vector, size_t sample_size, char *name) {
 // ----------------------------------------------------------------------------
 // neural net blocks; the dynamics of the transformer_t
 
-void rmsnorm(int col_count, float y[col_count], float x[col_count],
-             float w[col_count], float epsilon) {
+void rmsnorm(int col_count, float* y, float* x,
+             float* w, float epsilon) {
 
   // calculate sum of squares
   float ss = 0.0f;
   for (int j = 0; j < col_count; j++) {
-    ss += x[j] * x[j];
+    ss += x[MINDEX1(col_count,j)] * x[MINDEX1(col_count,j)];
   }
   ss /= col_count;
   ss = 1.0f / sqrtf(ss);
   ss += epsilon;
   // normalize and scale
   for (int j = 0; j < col_count; j++) {
-    y[j] = w[j] * (ss * x[j]);
+    y[MINDEX1(col_count,j)] = w[MINDEX1(col_count,j)] * (ss * x[MINDEX1(col_count,j)]);
   }
 }
 
-void softmax(int col_count, int col_stride, float x[col_stride]) {
+void softmax(int col_count, int col_stride, float* x) {
 
   // find max value (for numerical stability)
-  float max_val = x[0];
+  float max_val = x[MINDEX1(col_count,0)];
   for (int j = 1; j < col_count; j++) {
-    if (x[j] > max_val) {
-      max_val = x[j];
+    if (x[MINDEX1(col_count,j)] > max_val) {
+      max_val = x[MINDEX1(col_count,j)];
     }
   }
   // exp and sum
   float sum = 0.0f;
   for (int j = 0; j < col_count; j++) {
-    x[j] = expf(x[j] - max_val);
-    sum += x[j];
+    x[MINDEX1(col_count,j)] = expf(x[MINDEX1(col_count,j)] - max_val);
+    sum += x[MINDEX1(col_count,j)];
   }
   // normalize
   for (int j = 0; j < col_count; j++) {
-    x[j] /= sum;
+    x[MINDEX1(col_count,j)] /= sum;
   }
 }
 
-void matmul(int col_count, int red_count, float y[col_count],
-            float x[red_count], float w[col_count][red_count]) {
+void matmul(int col_count, int red_count, float* y,
+            float* x, float* w) {
   for (int j = 0; j < col_count; j++) {
-    y[j] = 0.0f;
+    y[MINDEX1(col_count,j)] = 0.0f;
     for (int k = 0; k < red_count; k++) {
-      y[j] += x[k] * w[j][k];
+      y[MINDEX1(col_count,j)] += x[MINDEX1(red_count,k)] * w[MINDEX2(col_count,red_count,j,k)];
     }
   }
 }
 
-void rope(int col_count, float x[col_count], int pos) {
+void rope(int col_count, float* x, int pos) {
 
   for (int j = 0; j < col_count; j += 2) {
     float freq = 1.0f / powf(500000.0f, j / (float)col_count);
     float val = (pos)*freq;
     float fcr = cosf(val);
     float fci = sinf(val);
-    float v0 = x[j];
-    float v1 = x[j + 1];
-    x[j] = v0 * fcr - v1 * fci;
-    x[j + 1] = v0 * fci + v1 * fcr;
+    float v0 = x[MINDEX1(col_count,j)];
+    float v1 = x[MINDEX1(col_count,j+1)];
+    x[MINDEX1(col_count,j)] = v0 * fcr - v1 * fci;
+    x[MINDEX1(col_count,j+1)] = v0 * fci + v1 * fcr;
   }
 }
 
@@ -390,6 +409,7 @@ float *forward(
     float* logits, int pos,
     int logits_count) {
 
+
   float* embedding = CALLOC1(float,embedding_dim);
   float* mha_norm = CALLOC1(float,embedding_dim);
   float* mha_q = CALLOC2(float,q_head_count,head_dim);
@@ -401,7 +421,7 @@ float *forward(
   float* ffn_fc = CALLOC1(float,hidden_dim);
   float* ffn_up = CALLOC1(float,hidden_dim);
   float* ffn_out = CALLOC1(float,embedding_dim);
-
+  printf("%d \n", token);
   // Get embedding representation of each token in the token sequence
   for (int e = 0; e < embedding_dim; e++) {
     embedding[MINDEX1(embedding_dim,e)] = embedding_weight[MINDEX2(vocabulary_len,embedding_dim,token,e)];
@@ -510,7 +530,7 @@ float *forward(
   return &logits[0];
 }
 
-float *driver(transformer_t *transformer, int sequence_len, int *sequence,
+float *driver(transformer_t *transformer, int token,
               int pos, int logits_count) {
   configuration_t *c = &transformer->config;
   parameter_set_t *p = &transformer->params;
@@ -528,41 +548,24 @@ float *driver(transformer_t *transformer, int sequence_len, int *sequence,
   int hidden_dim = c->hidden_dim;
 
   return forward(
-      transformer, sequence, vocabulary_len, context_len, layer_count,
+      transformer, token, vocabulary_len, context_len, layer_count,
       q_head_count, kv_head_count, q_head_per_kv_head_count, embedding_dim,
       head_dim, q_dim, kv_dim, hidden_dim,
-
       1e-5f,
-
-      (float (*)[embedding_dim])p->embedding_weight,
-      (float (*)[embedding_dim])p->mha_norm_weight,
-      (float (*)[kv_head_count][q_head_per_kv_head_count][head_dim]
-                [embedding_dim])p->mha_q_weight,
-      (float (*)[kv_head_count][head_dim][embedding_dim])p->mha_k_weight,
-      (float (*)[kv_head_count][head_dim][embedding_dim])p->mha_v_weight,
-      (float (*)[embedding_dim][embedding_dim])p->mha_out_weight,
-      (float (*)[embedding_dim])p->ffn_norm_weight,
-      (float (*)[embedding_dim][hidden_dim])p->ffn_fc_weight,
-      (float (*)[embedding_dim][hidden_dim])p->ffn_up_weight,
-      (float (*)[hidden_dim][embedding_dim])p->ffn_out_weight,
-      (float(*))p->out_norm_weight, (float (*)[embedding_dim])p->out_weight,
-
-      (float (*)[embedding_dim])s->embedding,
-      (float (*)[embedding_dim])s->mha_norm,
-      (float (*)[q_head_per_kv_head_count][SEQUENCE_CHUNK_MAX_LEN][head_dim])
-          s->mha_q,
-      (float (*)[kv_head_count][context_len][head_dim])s->k_cache,
-      (float (*)[kv_head_count][context_len][head_dim])s->v_cache,
-      (float (*)[q_head_per_kv_head_count][context_len][context_len])
-          s->mha_score,
-      (float (*)[q_head_per_kv_head_count][SEQUENCE_CHUNK_MAX_LEN]
-                [embedding_dim])s->mha_blend,
-      (float (*)[embedding_dim])s->mha_att,
-      (float (*)[embedding_dim])s->mha_out,
-      (float (*)[embedding_dim])s->ffn_norm, (float (*)[hidden_dim])s->ffn_fc,
-      (float (*)[hidden_dim])s->ffn_up, (float (*)[embedding_dim])s->ffn_out,
-      (float (*)[vocabulary_len])s->logits,
-
+      p->embedding_weight,
+      p->mha_norm_weight,
+      p->mha_q_weight,
+      p->mha_k_weight,
+      p->mha_v_weight,
+      p->mha_out_weight,
+      p->ffn_norm_weight,
+      p->ffn_fc_weight,
+      p->ffn_up_weight,
+      p->ffn_out_weight,
+      p->out_norm_weight,p->out_weight,
+      s->k_cache,
+      s->v_cache,
+      s->logits,
       pos, logits_count);
 }
 
@@ -971,7 +974,7 @@ int sample(Sampler *sampler, float *logits) {
       logits[q] /= sampler->temperature;
     }
     // apply softmax to the logits to get the probabilities for next token
-    softmax(1, sampler->vocabulary_len, sampler->vocabulary_len,
+    softmax( sampler->vocabulary_len, sampler->vocabulary_len,
             (float (*)[sampler->vocabulary_len])logits);
     // flip a (float) coin (this is our source of entropy for sampling)
     float coin = random_f32(&sampler->rng_state);
@@ -1007,7 +1010,7 @@ void generate(transformer_t *transformer, Tokenizer *tokenizer,
   if (prompt == NULL) {
     prompt = empty_prompt;
   }
-
+  printf("IN GENERATE\n");
   // encode the (string) prompt into tokens sequence
   int sequence_len = 0;
   int *sequence =
@@ -1034,7 +1037,7 @@ void generate(transformer_t *transformer, Tokenizer *tokenizer,
   printf("\033[0m");
 
   int next; // will store the next token in the sequence
-  float *warmup = driver(transformer, 1, sequence, 0, 1); // cache warmup
+  float *warmup = driver(transformer, sequence[0], 0, 1); // cache warmup
 
   size_t generated_count = 0; // number of tokens generated so far
   size_t past = 0;            // number of tokens already processed
@@ -1054,22 +1057,23 @@ void generate(transformer_t *transformer, Tokenizer *tokenizer,
   // First process the input token sequence by chunks
   int *chunk = sequence;
   size_t remaining_sequence_len = sequence_len;
-  size_t chunk_len = MIN(remaining_sequence_len, SEQUENCE_CHUNK_MAX_LEN);
+  //size_t chunk_len = MIN(remaining_sequence_len, SEQUENCE_CHUNK_MAX_LEN);
+  size_t chunk_len = 1;
   start = time_in_ms();
-  while (chunk_len != 0) {
+  while (remaining_sequence_len != 0) {
     // We only compute the very last logits
     int logits_count = (remaining_sequence_len - chunk_len == 0) ? 1 : 0;
 
     // Run the transformer to fill the KV-cache and get final logits
-    float *logits = driver(transformer, chunk_len, chunk, past, logits_count);
+    float *logits = driver(transformer, *chunk, past, logits_count);
 
     remaining_sequence_len -= chunk_len;
     chunk += chunk_len;
     past += chunk_len;
-    chunk_len = MIN(remaining_sequence_len, SEQUENCE_CHUNK_MAX_LEN);
+
 
     // First token generation after the prompt has been processed
-    if (chunk_len == 0) {
+    if (remaining_sequence_len == 0) {
       end = time_in_ms();
       prefill_time = (end - start) / 1000.0;
 
@@ -1088,7 +1092,7 @@ void generate(transformer_t *transformer, Tokenizer *tokenizer,
   while (generated_count < steps) {
     // forward the transformer to get logits for the next token
     int current = next;
-    float *logits = driver(transformer, 1, &current, past, 1);
+    float *logits = driver(transformer, current, past,1);
 
     end = time_in_ms();
     decode_time += (end - start) / 1000.0;
