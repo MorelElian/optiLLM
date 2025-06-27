@@ -2,3 +2,6 @@ llama2.c/*
 *.bin
 forward
 go.sh
+dump/*
+*.o
+main
