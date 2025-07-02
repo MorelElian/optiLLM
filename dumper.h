@@ -17,7 +17,7 @@ void fread_float(FILE *f, float *v);
 
 void fwrite_array_double(const char *filename, const double *array, int size);
 void fwrite_array_int(const char *filename, const int *array, int size);
-void fwrite_array_float(const char *basename, const float *array, int size, int suffix);
+void fwrite_array_float(const char *basename, const float *array, int size, int pos, int layer);
 void fwrite_array_int64(const char *filename, const int64_t *array, int size);
 
 void fread_array_double(const char *filename, double *array, int size);
@@ -30,6 +30,7 @@ void fread_array_int64(const char *filename, int64_t *array, int size);
 #define COND_DUMP(fun_call, condition) \
   if (condition)                       \
     fun_call;
+#define COND l <= 2 || l == 15
 #else
 #define DUMP(fun_call)
 #define COND_DUMP(fun_call, condition)

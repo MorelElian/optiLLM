@@ -5,3 +5,6 @@ go.sh
 dump/*
 *.o
 main
+main_dump
+forward_dump
+compare_vectors

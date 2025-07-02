@@ -14,7 +14,6 @@ void fwrite_int(FILE *f, int v) {
 }
 
 void fwrite_float(FILE *f, float v) {
-  v = floorf(v * 1e3f);
   fwrite(&v, sizeof(v), 1, f);
 }
 
@@ -48,9 +47,9 @@ void fwrite_array_int(const char *filename, const int *array, int size) {
   fclose(f);
 }
 
-void fwrite_array_float(const char *basename, const float *array, int size, int suffix) {
+void fwrite_array_float(const char *basename, const float *array, int size, int pos, int layer) {
   char filename[256];
-  snprintf(filename, sizeof(filename), "%s_%d", basename, suffix);
+  snprintf(filename, sizeof(filename), "%s_%d_%d", basename, pos, layer);
   FILE *f = fopen(filename, "wb");
   if (!f) { perror("fopen"); exit(EXIT_FAILURE); }
   for (int i = 0; i < size; i++) fwrite_float(f, array[i]);
